@@ -1,0 +1,343 @@
+openapi: 3.0.3
+info:
+  title: Ktor CRUD + Auth API
+  description: |
+    REST API сервер на Ktor с полным CRUD, JWT аутентификацией и документацией.
+    
+    ## Аутентификация
+    API использует JWT Bearer токены. Получите токен через `/api/auth/login` или `/api/auth/register`,
+    затем добавьте заголовок `Authorization: Bearer <token>` к защищённым запросам.
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+tags:
+  - name: Auth
+    description: Аутентификация пользователей
+  - name: Tasks
+    description: CRUD операции с задачами (требуют JWT)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен авторизации
+  
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+          example: testuser
+          description: Уникальное имя пользователя
+        email:
+          type: string
+          format: email
+          example: test@mail.com
+        password:
+          type: string
+          minLength: 4
+          example: "1234"
+    
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: testuser
+        password:
+          type: string
+          example: "1234"
+    
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        token:
+          type: string
+          description: JWT токен (при успешной авторизации)
+    
+    TaskRequest:
+      type: object
+      required:
+        - title
+        - description
+      properties:
+        title:
+          type: string
+          example: Моя задача
+        description:
+          type: string
+          example: Описание задачи
+        completed:
+          type: boolean
+          default: false
+    
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+        description:
+          type: string
+        completed:
+          type: boolean
+        userId:
+          type: integer
+    
+    TaskResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Task'
+    
+    TaskListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        code:
+          type: integer
+
+paths:
+  /api/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Регистрация пользователя
+      description: Создаёт нового пользователя и возвращает JWT токен
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Регистрация успешна
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          description: Пользователь уже существует
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Вход в систему
+      description: Аутентификация пользователя и получение JWT токена
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Вход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Неверные учётные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /api/tasks:
+    get:
+      tags:
+        - Tasks
+      summary: Получить все задачи
+      description: Возвращает все задачи текущего пользователя с возможностью фильтрации
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: completed
+          in: query
+          description: Фильтр по статусу выполнения
+          schema:
+            type: boolean
+        - name: search
+          in: query
+          description: Поиск по тексту в title и description
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '401':
+          description: Требуется авторизация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    
+    post:
+      tags:
+        - Tasks
+      summary: Создать задачу
+      description: Создаёт новую задачу для текущего пользователя
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+      responses:
+        '201':
+          description: Задача создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Некорректные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '401':
+          description: Требуется авторизация
+
+  /api/tasks/{id}:
+    get:
+      tags:
+        - Tasks
+      summary: Получить задачу по ID
+      description: Возвращает задачу по ID (только свои задачи)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID задачи
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Задача найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          description: Задача не найдена
+        '401':
+          description: Требуется авторизация
+    
+    put:
+      tags:
+        - Tasks
+      summary: Обновить задачу
+      description: Обновляет существующую задачу
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequest'
+      responses:
+        '200':
+          description: Задача обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          description: Задача не найдена
+        '401':
+          description: Требуется авторизация
+    
+    delete:
+      tags:
+        - Tasks
+      summary: Удалить задачу
+      description: Удаляет задачу по ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Задача удалена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '404':
+          description: Задача не найдена
+        '401':
+          description: Требуется авторизация
